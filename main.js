@@ -138,6 +138,12 @@ const LANG_NAME = {
 function shortCode(lang) {
   return (lang || 'zh-TW').split('-')[0];
 }
+// Google Translate v2 目標語言：保留繁中/簡中地區碼，其餘用短碼
+function googleTarget(lang) {
+  if (lang === 'zh-TW') return 'zh-TW'; // 繁體中文
+  if (lang === 'zh-CN') return 'zh-CN'; // 簡體中文
+  return shortCode(lang);
+}
 
 function getApiKey(serviceId) {
   const svc = TRANSLATION_SERVICES[serviceId];
@@ -152,7 +158,7 @@ async function callGoogle(text, targetLang, sourceLang) {
   const key = getApiKey('google');
   if (!key) throw new Error('尚未設定 Google API Key');
   const url = 'https://translation.googleapis.com/language/translate/v2?key=' + encodeURIComponent(key);
-  const body = { q: text, target: shortCode(targetLang), format: 'text' };
+  const body = { q: text, target: googleTarget(targetLang), format: 'text' };
   if (sourceLang && sourceLang !== 'auto') body.source = shortCode(sourceLang);
   const res = await fetch(url, {
     method: 'POST',
@@ -324,6 +330,21 @@ function learnFromText(sourceText) {
 // ------------------------------------------------------------------
 async function translateUnified({ text, targetLang, sourceLang, apiId }) {
   const primary = apiId || store.get('activeApi') || 'google';
+
+  // 來源語言 == 輸出語言 → 不需翻譯（避免 Google「Bad language pair: ja|ja」等錯誤），直接顯示原文
+  if (sourceLang && sourceLang !== 'auto' && shortCode(sourceLang) === shortCode(targetLang)) {
+    return {
+      ok: true,
+      translated: text,
+      usedApi: 'none',
+      usedApiName: '原文（同語言）',
+      latency: 0,
+      fellBack: false,
+      learned: learnFromText(text),
+      sameLang: true,
+    };
+  }
+
   const order = [primary, ...(store.get('fallbackOrder') || []).filter((x) => x !== primary)];
 
   const errors = []; // 記錄每個嘗試過的服務失敗原因，方便診斷
