@@ -1,0 +1,32 @@
+{
+  "name": "realtime-loopback-subtitle",
+  "version": "1.0.0",
+  "description": "即時語音字幕工具 — 擷取系統音訊輸出（Loopback），本地 Whisper 離線辨識，翻譯 API / 輸出語言即時切換，名稱記憶學習",
+  "main": "main.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "py:deps": "python -m pip install -r requirements.txt",
+    "py:devices": "python python/asr_engine.py --list-devices"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0"
+  },
+  "devDependencies": {
+    "electron": "^43.0.0"
+  },
+  "build": {
+    "appId": "com.subtitle.loopback",
+    "productName": "RealtimeLoopbackSubtitle",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "subtitle-overlay/**/*",
+      "python/**/*",
+      "glossary.json"
+    ]
+  }
+}

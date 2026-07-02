@@ -1,0 +1,22 @@
+{
+  "人名": {
+    "Tim Cook": "Tim Cook",
+    "提姆庫克": "Tim Cook",
+    "Elon Musk": "Elon Musk",
+    "Satya Nadella": "Satya Nadella"
+  },
+  "品牌": {
+    "愛波": "Apple",
+    "谷狗": "Google",
+    "Apple": "Apple",
+    "Google": "Google",
+    "Microsoft": "Microsoft",
+    "NVIDIA": "NVIDIA"
+  },
+  "術語": {
+    "machine learning": "機器學習",
+    "deep learning": "深度學習",
+    "large language model": "大型語言模型",
+    "transformer": "Transformer"
+  }
+}

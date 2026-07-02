@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <title>即時語音字幕</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ═══════════ 頂部工具列 ═══════════ -->
+  <header class="toolbar">
+    <div class="mode-switch">
+      <button class="mode-btn active" data-mode="translate">翻譯模式</button>
+      <button class="mode-btn" data-mode="detect">偵測模式</button>
+    </div>
+
+    <div class="lang-bar" id="langBar">
+      <!-- 前五個語言 Pill + 更多 下拉，由 app.js 動態產生 -->
+    </div>
+
+    <div class="toolbar-right">
+      <div class="detect-control" title="辨識時預設偵測的語言（下一句立即生效）">
+        <span class="detect-label">偵測</span>
+        <select id="detectLangSelect">
+          <option value="auto">自動（日/英）</option>
+          <option value="ja">日文</option>
+          <option value="en">英文</option>
+        </select>
+      </div>
+      <button class="icon-btn" id="overlayToggle" title="切換懸浮字幕視窗">🪟 懸浮</button>
+      <button class="icon-btn" id="settingsBtn" title="設定">⚙️ 設定</button>
+    </div>
+  </header>
+
+  <!-- ═══════════ 字幕顯示區 ═══════════ -->
+  <main class="subtitle-area" id="subtitleArea">
+    <div class="empty-hint" id="emptyHint">
+      <p>選擇音訊輸出裝置並按「開始辨識」，即可擷取系統聲音並顯示字幕。</p>
+    </div>
+  </main>
+
+  <!-- ═══════════ 底部狀態列 ═══════════ -->
+  <footer class="statusbar">
+    <div class="statusbar-left">
+      <select id="deviceSelect" class="device-select" title="音訊輸出裝置（Loopback）">
+        <option value="">載入裝置中…</option>
+      </select>
+      <button class="primary-btn" id="startStopBtn" data-running="false">開始辨識</button>
+      <button class="ghost-btn" id="clearBtn">清除</button>
+      <button class="ghost-btn" id="copyBtn">複製全部</button>
+      <button class="ghost-btn" id="translateAllBtn" hidden>翻譯全部</button>
+    </div>
+
+    <div class="statusbar-right">
+      <!-- 音量波形 -->
+      <canvas id="volumeMeter" width="90" height="20" class="volume-meter" title="擷取音量"></canvas>
+      <!-- 狀態燈 -->
+      <span class="status-light" id="statusLight" data-state="stopped" title="狀態"></span>
+      <span class="status-text" id="statusText">停止</span>
+      <!-- 目前 API 名稱（點擊開設定） -->
+      <button class="api-chip" id="apiChip" title="目前翻譯服務，點擊開啟設定">Google</button>
+    </div>
+  </footer>
+
+  <!-- 語言切換提示條 -->
+  <div class="lang-toast" id="langToast" hidden>
+    <span id="langToastText">語言已切換</span>
+    <button class="link-btn" id="retranslateAllBtn">重新翻譯全部字幕</button>
+    <button class="close-x" id="langToastClose">✕</button>
+  </div>
+
+  <!-- Toast 通知堆疊 -->
+  <div class="toast-stack" id="toastStack"></div>
+
+  <!-- ═══════════ 設定面板（Modal） ═══════════ -->
+  <div class="modal-overlay" id="settingsModal" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle">設定</h2>
+        <button class="close-x" id="settingsClose">✕</button>
+      </div>
+
+      <nav class="modal-tabs">
+        <button class="tab-btn active" data-tab="api">翻譯服務</button>
+        <button class="tab-btn" data-tab="glossary">詞庫管理</button>
+        <button class="tab-btn" data-tab="general">一般</button>
+      </nav>
+
+      <!-- Tab: 翻譯服務 API 切換器 -->
+      <section class="tab-panel active" data-tab="api">
+        <p class="panel-hint">執行中隨時切換，下一句立即生效。失敗會自動降級到 Fallback。</p>
+        <div class="api-list" id="apiList"><!-- 動態 --></div>
+
+        <div class="api-key-editor" id="apiKeyEditor" hidden>
+          <label id="apiKeyLabel">API Key</label>
+          <div class="key-row">
+            <input type="password" id="apiKeyInput" placeholder="貼上 API Key" />
+            <button class="ghost-btn" id="toggleKeyVisibility">顯示</button>
+            <button class="ghost-btn" id="testKeyBtn">測試連線</button>
+          </div>
+          <div class="key-actions">
+            <button class="primary-btn" id="saveKeyBtn">儲存</button>
+            <span class="key-note" id="keyNote"></span>
+          </div>
+        </div>
+
+        <div class="fallback-editor">
+          <h3>Fallback 降級順序</h3>
+          <p class="panel-hint">主要 API 失敗時，依序嘗試下列服務。</p>
+          <ol class="fallback-list" id="fallbackList"><!-- 動態 --></ol>
+        </div>
+      </section>
+
+      <!-- Tab: 詞庫管理 -->
+      <section class="tab-panel" data-tab="glossary">
+        <div class="glossary-controls">
+          <label class="switch">
+            <input type="checkbox" id="glossaryEnabled" checked />
+            <span>啟用詞庫</span>
+          </label>
+          <div class="glossary-io">
+            <button class="ghost-btn" id="importGlossaryBtn">匯入 JSON</button>
+            <button class="ghost-btn" id="exportGlossaryBtn">匯出 JSON</button>
+          </div>
+        </div>
+
+        <div class="glossary-add">
+          <select id="glossaryCategory">
+            <option value="人名">人名</option>
+            <option value="品牌">品牌</option>
+            <option value="術語">術語</option>
+          </select>
+          <input type="text" id="glossarySource" placeholder="原詞" />
+          <input type="text" id="glossaryTarget" placeholder="正確翻譯" />
+          <button class="primary-btn" id="addGlossaryBtn">新增</button>
+        </div>
+
+        <div class="glossary-table" id="glossaryTable"><!-- 動態 --></div>
+        <input type="file" id="glossaryFileInput" accept="application/json" hidden />
+      </section>
+
+      <!-- Tab: 一般 -->
+      <section class="tab-panel" data-tab="general">
+        <div class="setting-row">
+          <label>英文 / 語言偵測模型（速度 vs 準確度）</label>
+          <select id="modelSelect">
+            <option value="tiny">tiny — 最快 (~1s)</option>
+            <option value="base">base — 平衡 (~2s)</option>
+            <option value="small" selected>small — 推薦 (~3s)</option>
+            <option value="medium">medium — 高準確 (~5s)</option>
+          </select>
+        </div>
+        <p class="panel-hint">
+          僅偵測日文 / 英文兩種語言。日文固定使用微調模型
+          <code>hhim8826/whisper-large-v3-turbo-ja</code>（首次辨識到日文時下載約
+          1.6GB），並在漢字上方標示平假名注音；英文使用上方選擇的模型。
+        </p>
+        <div class="setting-row">
+          <label>字幕字型大小</label>
+          <div class="font-control">
+            <button class="ghost-btn" id="fontMinus">A−</button>
+            <span id="fontSizeLabel">24px</span>
+            <button class="ghost-btn" id="fontPlus">A＋</button>
+          </div>
+        </div>
+        <p class="panel-hint">提示：字幕區可用 Ctrl + / Ctrl − 快速調整字型大小。</p>
+      </section>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

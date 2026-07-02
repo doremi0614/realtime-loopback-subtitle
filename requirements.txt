@@ -1,0 +1,26 @@
+# 語音字幕工具 — Python 依賴
+#
+# 系統音訊擷取（Loopback）
+sounddevice>=0.4.6
+numpy>=1.24
+#
+# Windows WASAPI Loopback 備用方案（強烈建議，Windows 上更穩定）
+#   pip install PyAudioWPatch
+# 若非 Windows 可忽略下一行
+PyAudioWPatch>=0.2.12.7 ; sys_platform == "win32"
+#
+# 本地離線語音辨識
+#   英文 / 語言偵測 → openai-whisper（base 模型）
+openai-whisper>=20231117
+#   日文 → HuggingFace 微調模型 hhim8826/whisper-large-v3-turbo-ja（transformers）
+transformers>=4.40
+accelerate>=0.28
+#
+# 日文假名注音（漢字上方平假名 furigana）
+pykakasi>=2.2.1
+#
+# 人聲偵測 VAD（講完一句就輸出字幕；區分人聲與音樂/雜訊）
+silero-vad>=5.1
+#
+# GPU 加速（可選，若有 NVIDIA 顯卡，日文 large-v3-turbo 強烈建議）：
+#   pip install torch --index-url https://download.pytorch.org/whl/cu118

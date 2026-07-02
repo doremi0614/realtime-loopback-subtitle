@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+package-lock.json.bak
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Build / packaging output
+dist/
+out/
+build/
+release/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Secrets / env (API keys are stored in Electron userData, not here — keep it that way)
+.env
+.env.*
+
+# Editor / local tooling
+.claude/
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
