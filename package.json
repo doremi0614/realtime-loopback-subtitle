@@ -9,17 +9,23 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "py:deps": "python -m pip install -r requirements.txt",
-    "py:devices": "python python/asr_engine.py --list-devices"
+    "py:devices": "python python/asr_engine.py --list-devices",
+    "dist": "electron-builder --win"
   },
   "dependencies": {
     "electron-store": "^8.2.0"
   },
   "devDependencies": {
-    "electron": "^43.0.0"
+    "electron": "^43.0.0",
+    "electron-builder": "^24.13.3"
   },
   "build": {
     "appId": "com.subtitle.loopback",
     "productName": "RealtimeLoopbackSubtitle",
+    "asar": false,
+    "directories": {
+      "output": "dist"
+    },
     "files": [
       "main.js",
       "preload.js",
@@ -27,6 +33,17 @@
       "subtitle-overlay/**/*",
       "python/**/*",
       "glossary.json"
-    ]
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "RealtimeLoopbackSubtitle-Setup-${version}.${ext}"
+    }
   }
 }

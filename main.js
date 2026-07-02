@@ -75,18 +75,33 @@ const store = new Store({
   },
 });
 
-// glossary.json 放在專案根目錄，可被使用者匯入匯出
-const GLOSSARY_PATH = path.join(APP_ROOT, 'glossary.json');
+// 內建預設詞庫（隨程式打包，唯讀）
+const BUNDLED_GLOSSARY = path.join(APP_ROOT, 'glossary.json');
+// 實際讀寫的詞庫放在 userData（打包安裝到 Program Files 時該處才可寫入）
+function glossaryPath() {
+  try { return path.join(app.getPath('userData'), 'glossary.json'); }
+  catch (e) { return BUNDLED_GLOSSARY; } // app 尚未 ready 時的後援
+}
 
 function loadGlossary() {
+  const p = glossaryPath();
   try {
-    return JSON.parse(fs.readFileSync(GLOSSARY_PATH, 'utf8'));
+    if (!fs.existsSync(p)) {
+      // 首次執行：以內建預設種子
+      try { fs.copyFileSync(BUNDLED_GLOSSARY, p); } catch (e) { /* ignore */ }
+    }
+    return JSON.parse(fs.readFileSync(p, 'utf8'));
   } catch (e) {
-    return { 人名: {}, 品牌: {}, 術語: {} };
+    try { return JSON.parse(fs.readFileSync(BUNDLED_GLOSSARY, 'utf8')); }
+    catch (e2) { return { 人名: {}, 品牌: {}, 術語: {} }; }
   }
 }
 function saveGlossary(g) {
-  fs.writeFileSync(GLOSSARY_PATH, JSON.stringify(g, null, 2), 'utf8');
+  try {
+    fs.writeFileSync(glossaryPath(), JSON.stringify(g, null, 2), 'utf8');
+  } catch (e) {
+    if (IS_DEV) console.error('saveGlossary failed', e);
+  }
 }
 
 // ------------------------------------------------------------------
