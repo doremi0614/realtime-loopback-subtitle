@@ -43,9 +43,10 @@
   <!-- ═══════════ 底部狀態列 ═══════════ -->
   <footer class="statusbar">
     <div class="statusbar-left">
-      <select id="deviceSelect" class="device-select" title="音訊輸出裝置（Loopback）">
-        <option value="">載入裝置中…</option>
+      <select id="deviceSelect" class="device-select" title="音訊來源：系統輸出裝置或特定應用程式（視窗）">
+        <option value="">載入音訊來源中…</option>
       </select>
+      <button class="ghost-btn" id="refreshSourcesBtn" title="重新掃描音訊來源（裝置與應用程式）">🔄</button>
       <button class="primary-btn" id="startStopBtn" data-running="false">開始辨識</button>
       <button class="ghost-btn" id="clearBtn">清除</button>
       <button class="ghost-btn" id="copyBtn">複製全部</button>

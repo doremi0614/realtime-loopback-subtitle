@@ -449,6 +449,12 @@ function pySend(obj) {
 
 // 收到辨識句 → 若翻譯模式，主程序直接翻譯後推給 renderer
 async function handlePythonEvent(msg) {
+  // Python 引擎就緒 → 立即預載全部模型（base whisper + 日文微調 + VAD），
+  // 讓 app 一開就載好，第一句不用等冷載入
+  if (msg.type === 'ready') {
+    pySend({ cmd: 'preload', model: store.get('model') });
+  }
+
   // 音量 / 狀態 / 裝置 / 模型 / 錯誤：直接轉發
   sendToRenderer('asr:event', msg);
 
@@ -567,23 +573,34 @@ function registerIpc() {
   ipcMain.handle('asr:list-devices', async () => {
     startPython();
     pySend({ cmd: 'list_devices' });
+    pySend({ cmd: 'list_sessions' }); // 特定應用程式（視窗）音訊來源
     return { ok: true };
   });
 
   ipcMain.handle('asr:start', async (_e, opts) => {
     startPython();
-    const device = (opts && opts.device != null) ? opts.device : store.get('audioDevice');
-    if (device == null) return { ok: false, error: '尚未選擇音訊裝置' };
-    store.set('audioDevice', device);
-    pySend({
+    // 來源格式："dev:<index>" 系統裝置 / "app:<pid>" 特定應用程式；相容舊的純數字
+    const source = String((opts && opts.source != null) ? opts.source : (store.get('audioDevice') ?? ''));
+    if (!source) return { ok: false, error: '尚未選擇音訊來源' };
+    store.set('audioDevice', source);
+
+    const payload = {
       cmd: 'start',
-      device,
       backend: (opts && opts.backend) || 'auto',
       model: store.get('model'),
       task: 'transcribe',
       language: null,
       detect: store.get('detectLang'),
-    });
+    };
+    if (source.startsWith('app:')) {
+      payload.app_pid = parseInt(source.slice(4), 10);
+      if (!payload.app_pid) return { ok: false, error: '無效的應用程式來源' };
+    } else {
+      const idx = parseInt(source.replace(/^dev:/, ''), 10);
+      if (isNaN(idx)) return { ok: false, error: '無效的音訊裝置' };
+      payload.device = idx;
+    }
+    pySend(payload);
     return { ok: true };
   });
 

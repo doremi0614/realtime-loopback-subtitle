@@ -22,5 +22,10 @@ pykakasi>=2.2.1
 # 人聲偵測 VAD（講完一句就輸出字幕；區分人聲與音樂/雜訊）
 silero-vad>=5.1
 #
+# 特定應用程式（視窗）音訊擷取 — WASAPI Process Loopback（Win10 2004+）
+comtypes>=1.4
+pycaw>=20240210
+psutil>=5.9
+#
 # GPU 加速（可選，若有 NVIDIA 顯卡，日文 large-v3-turbo 強烈建議）：
 #   pip install torch --index-url https://download.pytorch.org/whl/cu118

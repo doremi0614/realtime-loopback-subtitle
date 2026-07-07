@@ -94,6 +94,13 @@ class ASREngine:
         self.vad_iterator = None
         self._vad_tried = False
 
+        # 模型載入鎖：preload 背景載入與 start 同時觸發時避免重複載入
+        self._load_lock = threading.Lock()
+        self._preloading = False
+
+        # 目前音訊來源的建構器（裝置 or 特定應用程式），供斷線重連使用
+        self._make_capture = None
+
         # 音訊緩衝與 VAD 狀態
         self._audio_q = queue.Queue()
         self._worker = None
@@ -107,23 +114,44 @@ class ASREngine:
 
     # ---------------- 模型 ----------------
     def load_model(self, name: str):
-        if self.model is not None and self.model_name == name:
-            emit({"type": "model_ready", "model": name, "device": self.model_device})
-            return
-        emit({"type": "model_loading", "model": name})
-        try:
-            import whisper  # 延遲載入，加快啟動與 list_devices
+        with self._load_lock:
+            if self.model is not None and self.model_name == name:
+                emit({"type": "model_ready", "model": name, "device": self.model_device})
+                return
+            emit({"type": "model_loading", "model": name})
             try:
-                import torch
-                self.model_device = "cuda" if torch.cuda.is_available() else "cpu"
-            except Exception:
-                self.model_device = "cpu"
-            # 明確指定裝置：有 CUDA 就載到 GPU（使用 GPU VRAM）
-            self.model = whisper.load_model(name, device=self.model_device)
-            self.model_name = name
-            emit({"type": "model_ready", "model": name, "device": self.model_device})
-        except Exception as e:
-            emit({"type": "error", "where": "load_model", "message": str(e)})
+                import whisper  # 延遲載入，加快啟動與 list_devices
+                try:
+                    import torch
+                    self.model_device = "cuda" if torch.cuda.is_available() else "cpu"
+                except Exception:
+                    self.model_device = "cpu"
+                # 明確指定裝置：有 CUDA 就載到 GPU（使用 GPU VRAM）
+                self.model = whisper.load_model(name, device=self.model_device)
+                self.model_name = name
+                emit({"type": "model_ready", "model": name, "device": self.model_device})
+            except Exception as e:
+                emit({"type": "error", "where": "load_model", "message": str(e)})
+
+    def preload(self, model: str):
+        """啟動時預先載入所有模型（base whisper + 日文微調 + VAD），
+        讓第一句就能立即辨識，不用等模型冷載入。"""
+        if self._preloading:
+            return
+        self._preloading = True
+
+        def _worker():
+            try:
+                self.load_model(model)
+                self._ensure_ja_model()
+                self._ensure_vad()
+                emit({"type": "preload_done"})
+            except Exception as e:
+                emit({"type": "error", "where": "preload", "message": str(e)})
+            finally:
+                self._preloading = False
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     # ---------------- 語言路由：僅支援 日文 / 英文 ----------------
     def _detect_ja_or_en(self, audio: np.ndarray) -> str:
@@ -143,6 +171,12 @@ class ASREngine:
 
     def _ensure_ja_model(self):
         """延遲載入 HuggingFace 日文微調模型（whisper-large-v3-turbo-ja）。"""
+        if self.ja_pipe is not None:
+            return
+        with self._load_lock:
+            self._ensure_ja_model_locked()
+
+    def _ensure_ja_model_locked(self):
         if self.ja_pipe is not None:
             return
         emit({"type": "model_loading", "model": "whisper-large-v3-turbo-ja"})
@@ -202,15 +236,24 @@ class ASREngine:
             return None
 
     # ---------------- 擷取控制 ----------------
-    def start(self, device_index: int, backend: str = "auto",
+    def start(self, device_index: int = -1, backend: str = "auto",
               model: str = "small", task: str = "transcribe", language=None,
-              detect: str = "auto"):
+              detect: str = "auto", app_pid=None):
         if self.running:
             self.stop()
 
         self.task = task or "transcribe"
         self.language = language
         self.detect_mode = detect or "auto"
+
+        # 音訊來源：特定應用程式（Process Loopback）或系統輸出裝置
+        if app_pid:
+            import process_audio_capture
+            self._make_capture = (lambda pid=int(app_pid):
+                                  process_audio_capture.ProcessLoopbackCapture(pid))
+        else:
+            self._make_capture = (lambda idx=int(device_index), be=backend:
+                                  audio_capture.LoopbackCapture(idx, backend=be))
         if self.model is None or self.model_name != model:
             self.load_model(model)
         if self.model is None:
@@ -224,7 +267,7 @@ class ASREngine:
         self._noise_floor = BASE_SILENCE_RMS
 
         try:
-            self.capture = audio_capture.LoopbackCapture(device_index, backend=backend)
+            self.capture = self._make_capture()
         except Exception as e:
             emit({"type": "error", "where": "open_device", "message": str(e)})
             return
@@ -239,7 +282,7 @@ class ASREngine:
         except Exception as e:
             self.running = False
             emit({"type": "error", "where": "start_capture", "message": str(e)})
-            self._try_reconnect(device_index, backend)
+            self._try_reconnect()
 
     def stop(self):
         self.running = False
@@ -257,12 +300,12 @@ class ASREngine:
             pass
         emit({"type": "status", "state": "stopped"})
 
-    def _try_reconnect(self, device_index, backend):
+    def _try_reconnect(self):
         emit({"type": "status", "state": "reconnecting"})
         for _ in range(3):
             time.sleep(1.0)
             try:
-                self.capture = audio_capture.LoopbackCapture(device_index, backend=backend)
+                self.capture = self._make_capture()
                 self.running = True
                 self._worker = threading.Thread(target=self._process_loop, daemon=True)
                 self._worker.start()
@@ -271,7 +314,7 @@ class ASREngine:
                 return
             except Exception:
                 continue
-        emit({"type": "error", "where": "reconnect", "message": "無法重新連線音訊裝置"})
+        emit({"type": "error", "where": "reconnect", "message": "無法重新連線音訊來源"})
 
     # ---------------- 音訊回呼（capture thread）----------------
     def _on_audio(self, chunk: np.ndarray):
@@ -496,16 +539,29 @@ def main():
         try:
             if cmd == "list_devices":
                 emit({"type": "devices", "devices": audio_capture.list_loopback_devices()})
+            elif cmd == "list_sessions":
+                # 列出有音訊工作階段的應用程式（特定視窗擷取來源）
+                try:
+                    import process_audio_capture
+                    emit({"type": "sessions",
+                          "sessions": process_audio_capture.list_audio_sessions()})
+                except Exception as e:
+                    emit({"type": "sessions", "sessions": [], "error": str(e)})
             elif cmd == "load_model":
                 engine.load_model(msg.get("model", "small"))
+            elif cmd == "preload":
+                # 啟動即載入全部模型（base whisper + 日文微調 + VAD）
+                engine.preload(msg.get("model", "small"))
             elif cmd == "start":
+                _dev = msg.get("device", -1)
                 engine.start(
-                    device_index=int(msg.get("device", -1)),
+                    device_index=int(_dev) if _dev is not None else -1,
                     backend=msg.get("backend", "auto"),
                     model=msg.get("model", "small"),
                     task=msg.get("task", "transcribe"),
                     language=msg.get("language", None),
                     detect=msg.get("detect", "auto"),
+                    app_pid=msg.get("app_pid", None),
                 )
             elif cmd == "set_detect":
                 # 執行中即時切換偵測語言（auto / ja / en）

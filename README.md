@@ -12,6 +12,8 @@
 | 功能 | 說明 |
 |------|------|
 | 🎧 系統音訊擷取 | WASAPI Loopback（擷取電腦正在播放的聲音，非麥克風） |
+| 🪟 特定應用程式擷取 | WASAPI Process Loopback：只錄指定視窗/程式的聲音，不受其他 App 干擾（Win10 2004+） |
+| ⚡ 啟動即預載模型 | App 開啟即自動載入 base whisper + 日文微調模型 + VAD 到 GPU，第一句免等待 |
 | 🗣 本地離線辨識 | 僅偵測日文 / 英文：英文用 openai-whisper，日文用微調模型 `whisper-large-v3-turbo-ja` |
 | 🈁 日文假名注音 | 日文原文在漢字上方自動標示平假名（furigana，ruby 顯示） |
 | 🔄 翻譯 API 即時切換 | Google / DeepL / LibreTranslate / Claude，下一句立即生效、失敗自動降級 |

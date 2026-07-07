@@ -223,8 +223,9 @@ function bindStatusbar() {
   $('#copyBtn').onclick = copyAll;
   $('#translateAllBtn').onclick = translateAllDetect;
   $('#apiChip').onclick = () => openSettings('api');
-  $('#deviceSelect').onchange = (e) => {
-    state.pendingDevice = parseInt(e.target.value, 10);
+  $('#refreshSourcesBtn').onclick = async () => {
+    await refreshDevices();
+    toast('重新掃描音訊來源…');
   };
 }
 
@@ -239,32 +240,61 @@ function renderEmptyHint() {
   }
 }
 
-// ═══════════ 音訊裝置 ═══════════
+// ═══════════ 音訊來源（系統裝置 + 特定應用程式） ═══════════
+let lastDevices = [];
+let lastSessions = [];
+
 async function refreshDevices() {
-  await window.api.listDevices(); // 觸發 python 掃描 → 由 asr:event 'devices' 回填
+  await window.api.listDevices(); // 觸發 python 掃描 → 'devices' + 'sessions' 事件回填
 }
 
-function populateDevices(devices) {
+function rebuildSourceSelect() {
   const sel = $('#deviceSelect');
+  const prev = sel.value; // 盡量保留目前選擇
   sel.innerHTML = '';
-  if (!devices || devices.length === 0) {
+
+  if ((!lastDevices || lastDevices.length === 0) && (!lastSessions || lastSessions.length === 0)) {
     const opt = document.createElement('option');
     opt.value = '';
-    opt.textContent = '找不到 Loopback 裝置（請啟用立體聲混音）';
+    opt.textContent = '找不到音訊來源（請啟用立體聲混音或安裝 PyAudioWPatch）';
     sel.appendChild(opt);
-    toast('找不到 Loopback 裝置，請在 Windows 音效設定啟用「立體聲混音」，或安裝 PyAudioWPatch', 'warn');
     return;
   }
-  devices.forEach((d) => {
-    const opt = document.createElement('option');
-    opt.value = d.index;
-    opt.textContent = (d.is_default ? '★ ' : '') + d.name + '  [Loopback]';
-    sel.appendChild(opt);
-  });
-  // 預設選第一個或 default
-  const def = devices.find((d) => d.is_default) || devices[0];
-  sel.value = def.index;
-  state.pendingDevice = def.index;
+
+  // 群組一：系統輸出裝置（全部聲音）
+  if (lastDevices && lastDevices.length) {
+    const g = document.createElement('optgroup');
+    g.label = '🔊 系統音訊裝置（全部聲音）';
+    lastDevices.forEach((d) => {
+      const opt = document.createElement('option');
+      opt.value = 'dev:' + d.index;
+      opt.textContent = (d.is_default ? '★ ' : '') + d.name;
+      g.appendChild(opt);
+    });
+    sel.appendChild(g);
+  }
+
+  // 群組二：特定應用程式（視窗）— 只錄該程式的聲音
+  if (lastSessions && lastSessions.length) {
+    const g = document.createElement('optgroup');
+    g.label = '🪟 特定應用程式（只錄該視窗）';
+    lastSessions.forEach((s) => {
+      const opt = document.createElement('option');
+      opt.value = 'app:' + s.pid;
+      const label = s.title ? `${s.title}（${s.name}）` : s.name;
+      opt.textContent = (s.active ? '🔈 ' : '') + label;
+      g.appendChild(opt);
+    });
+    sel.appendChild(g);
+  }
+
+  // 還原選擇；不在了就選預設裝置
+  if (prev && sel.querySelector(`option[value="${prev}"]`)) {
+    sel.value = prev;
+  } else {
+    const def = (lastDevices || []).find((d) => d.is_default) || (lastDevices || [])[0];
+    if (def) sel.value = 'dev:' + def.index;
+  }
 }
 
 // ═══════════ 開始/停止辨識 ═══════════
@@ -275,13 +305,13 @@ async function toggleRecognition() {
     return;
   }
   const sel = $('#deviceSelect');
-  const device = parseInt(sel.value, 10);
-  if (isNaN(device)) { toast('請先選擇音訊裝置', 'error'); return; }
+  const source = sel.value;
+  if (!source) { toast('請先選擇音訊來源', 'error'); return; }
 
-  const r = await window.api.startAsr({ device });
+  const r = await window.api.startAsr({ source });
   if (!r.ok) { toast(r.error || '啟動失敗', 'error'); return; }
   setRunning(true);
-  toast('開始擷取系統音訊…');
+  toast(source.startsWith('app:') ? '開始擷取該應用程式音訊…' : '開始擷取系統音訊…');
 }
 
 function setRunning(running) {
@@ -320,7 +350,15 @@ function handleAsrEvent(msg) {
     case 'ready':
       break;
     case 'devices':
-      populateDevices(msg.devices);
+      lastDevices = msg.devices || [];
+      rebuildSourceSelect();
+      break;
+    case 'sessions':
+      lastSessions = msg.sessions || [];
+      rebuildSourceSelect();
+      break;
+    case 'preload_done':
+      toast('模型已全部載入完成，可立即辨識', 'success');
       break;
     case 'model_loading':
       setStatusLight('recognizing', '載入模型…');
